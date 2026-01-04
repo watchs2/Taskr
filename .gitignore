@@ -1,0 +1,25 @@
+# Dependências do Node
+node_modules/
+
+# Pasta de Build (o resultado do "npm run build")
+dist/
+
+# Logs de erro
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ficheiros de ambiente (para não expor chaves secretas)
+.env
+.env.local
+
+# Ficheiros do sistema operativo
+.DS_Store
+Thumbs.db
+
+# Ficheiros temporários do TypeScript
+*.tsbuildinfo
+
+# Configurações locais de editores (opcional)
+.vscode/
+.idea/

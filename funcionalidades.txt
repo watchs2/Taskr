@@ -1,0 +1,22 @@
+☐
+☒
+
+//Criar tarefa
+taskr add <titulo> [flags]
+-> -t adiciona o shedule today
+-> -s <data> maybe?
+
+//eliminar tarefa
+taskr delete <id>
+
+//listar tarefas
+taskr ls <flags>
+-> -a (all)
+// devia haver uma forma para só saber as que já done ou todo 
+
+// começar uma starefa
+taskr start <id | nome> se for nome cria uma tarefa e começa o shechedule logo 
+
+taskr done <id>
+
+taskr stop 
