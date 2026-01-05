@@ -1,12 +1,4 @@
-/*
- add
- ls
- del
- start
- done
- stop
- --help
-*/
+import {createTask} from '../model/task'
 
 
 
@@ -55,7 +47,7 @@ function parseAdd(args: string[]) {
     }
     if (args.length == 2 && !isFlag(args[1]) && validToken(args[1])) {
          console.log(`[INFO] não implementado: nome:${args[1]}`)
-        //createTask(name)
+         createTask(args[1])
     } else if (args.length == 3 && validToken(args[2])) { 
         if (isFlag(args[2])) {
             //TODO: fazer uma função para validar todas as flags de add
