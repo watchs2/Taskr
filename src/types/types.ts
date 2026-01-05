@@ -2,9 +2,9 @@
     Ruben Agostinho
 */
 
-type Task_Status = "todo" | "blocked" | "in_progress" | "done"
+export type Task_Status = "todo" | "blocked" | "in_progress" | "done"
 
-interface task{
+export interface task{
     id: string;
     status: Task_Status;
     created_at: string;
@@ -17,14 +17,14 @@ interface task{
 
 }
 
-interface work{
+export interface work {
     id: string;
-    start: string; //ISO
-    stop: string; //ISO
-    duration: string; //mins
+    start: string; 
+    stop: string | null; 
+    duration: number | null; 
 }
 
-interface notes{
+export interface notes{
     id: string;
     value: string;
     created_at: string;

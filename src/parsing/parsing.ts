@@ -1,5 +1,5 @@
-import {createTask} from '../model/task'
-
+import {createTask,listAllTasks,taskScheduleToday , stopTask, startTask} from '../model/task'
+import { getTodayDate, convertToISO } from '../utils/dateUtils';
 
 
 export function parsingCommands(args: string[]) {
@@ -42,29 +42,50 @@ taskr add <name> <flags>
     sem flags simplesmente cria
 */
 function parseAdd(args: string[]) {
-    if (args.length <= 1) {
-        console.error("[ERRO] - Comando inválido usa exemplo: taskr add <nome>");
+    // args[0] é "add"
+    // args[1] é o nome da tarefa
+    
+    if (args.length < 2) {
+        console.error("[ERRO] - Uso: taskr add <nome> [flags]");
+        return;
     }
-    if (args.length == 2 && !isFlag(args[1]) && validToken(args[1])) {
-         console.log(`[INFO] não implementado: nome:${args[1]}`)
-         createTask(args[1])
-    } else if (args.length == 3 && validToken(args[2])) { 
-        if (isFlag(args[2])) {
-            //TODO: fazer uma função para validar todas as flags de add
-            const flag = args[2];
-            if (flag === '-t') {
-                //const shecudel = today
-                //createTask(name,today)
-                console.log(`[INFO] não implementado: nome:${args[1]} a flag:${args[2]}`)
-            } else if (flag === '-s') {
-                console.log(`[INFO] não implementado: nome:${args[1]} a flag:${args[2]}`)
-            } else {
-                console.error("[ERRO] - flag passada é inválida");
-            }
-        } else {
-            console.error("[ERRO] - flag passada é inválida");
+
+    const name = args[1];
+    let schedule: string | null = null;
+
+    // Caso 1: Apenas o nome -> taskr add "nome"
+    if (args.length === 2) {
+        createTask(name, null);
+        return;
+    }
+
+    // Caso 2: Tem flags
+    const flag = args[2];
+
+    if (flag === '-t') {
+        // Flag -t (Today)
+        schedule = getTodayDate(); // Retorna "2026-01-05"
+        createTask(name, schedule);
+
+    } else if (flag === '-s') {
+        // Flag -s (Schedule) -> Requer mais um argumento com a data
+        if (args.length < 4) {
+            console.error("[ERRO] - A flag -s precisa de uma data. Ex: -s 05/01/2026");
+            return;
         }
 
+        const dateInput = args[3]; // A data "05/01/2026"
+        const isoDate = convertToISO(dateInput);
+
+        if (isoDate) {
+            schedule = isoDate;
+            createTask(name, schedule);
+        } else {
+            console.error(`[ERRO] - Data inválida: "${dateInput}". Usa o formato DD/MM/AAAA.`);
+        }
+
+    } else {
+        console.error(`[ERRO] - Flag desconhecida: ${flag}`);
     }
 }
 
@@ -77,10 +98,13 @@ function parseLs(args: string[]) {
     if (args.length < 1) {
         console.error("[ERRO] - Comando inválido usa exemplo: taskr ls");
     }
-    if (args.length == 2 && !isFlag(args[1]) && validToken(args[1])) {
-         console.log(`[INFO] não implementado: nome:${args[1]}`)
-        //createTask(name)
+    if (args.length == 1 ) {
+        taskScheduleToday();
+    }else if(args.length == 2 && isFlag(args[1]) && validToken(args[1])){
+        listAllTasks();
     }
+
+  
 }
 
 /*
@@ -108,14 +132,15 @@ taskr start <id | nome> se for nome cria uma tarefa e começa o shechedule logo
 function parseStart(args: string[]){
     if (args.length < 1) {
         console.error("[ERRO] - Comando inválido usa exemplo: taskr start <id | nome>");
+        return; 
     }
-    if (args.length == 2 && validToken(args[1])) { 
+    if (args.length >= 2 && validToken(args[1])) { 
         if (!isFlag(args[1])) {
-            console.log(`[INFO] não implementado start id:${args[1]}`)
+            const idOrName = args[1];
+            startTask(idOrName); 
         } else {
             console.error("[ERRO] - flag passada é inválida neste comando");
         }
-
     }
 }
 
@@ -123,9 +148,8 @@ function parseStart(args: string[]){
 taskr stop
 */
 
-function parseStop(args: string[]){
-    //for now it does not have any command
-      console.log(`[INFO] não implementado stop  arg1:${args[0]} arg2:${args[1]}`)
+function parseStop(args: string[]) {
+    stopTask();
 }
 
 
