@@ -1,4 +1,4 @@
-import {createTask,listAllTasks,taskScheduleToday , stopTask, startTask} from '../model/task'
+import {createTask,listAllTasks,taskScheduleToday , stopTask, startTask,showCurrentStatus,showTodayTotalTime,markTaskAsDone} from '../model/task'
 import { getTodayDate, convertToISO } from '../utils/dateUtils';
 
 
@@ -26,6 +26,12 @@ export function parsingCommands(args: string[]) {
             break;
         case '--help':
             parseHelp(args)
+            break;
+        case 'status':
+            parseStatus(args);
+            break;
+        case 'done':
+            parseDone(args);
             break;
         default:
             console.error("[ERRO] - Comando inválido consulta os comandos válidos em  taskr --help ");
@@ -176,6 +182,8 @@ function parseHelp(args: string[]) {
     
     // Comando STOP
     console.log(`  stop                 Para o temporizador da tarefa atual.`);
+    console.log(`  status [-t]          Mostra a tarefa atual ou o tempo total de hoje.`);
+    console.log(`  done <id>            Marca uma tarefa como concluída.`);
     
     // Comando HELP
     console.log(`  --help               Mostra esta lista de comandos.\n`);
@@ -199,4 +207,25 @@ function validToken(token: string): boolean {
     if (token.length === 0) return false;
 
     return true;
+}
+
+function parseStatus(args: string[]) {
+    if (args.length === 1) {
+        showCurrentStatus();
+        return;
+    }
+
+    if (args[1] === '-t') {
+        showTodayTotalTime();
+    } else {
+        console.error(`[ERRO] Flag desconhecida: ${args[1]}`);
+    }
+}
+
+function parseDone(args: string[]) {
+    if (args.length < 2) {
+        console.error("[ERRO] Uso: taskr done <id>");
+        return;
+    }
+    markTaskAsDone(args[1]);
 }
