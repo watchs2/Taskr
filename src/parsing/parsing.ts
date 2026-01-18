@@ -1,4 +1,4 @@
-import {createTask,listAllTasks,taskScheduleToday , stopTask, startTask,showCurrentStatus,showTodayTotalTime,markTaskAsDone} from '../model/task'
+import {createTask,listAllTasks,taskScheduleToday , stopTask, startTask,showCurrentStatus,showTodayTotalTime,markTaskAsDone,markTaskAsTodo,editTask,showDayReport,showWeekReport,showMonthReport} from '../model/task'
 import { getTodayDate, convertToISO } from '../utils/dateUtils';
 
 
@@ -32,6 +32,15 @@ export function parsingCommands(args: string[]) {
             break;
         case 'done':
             parseDone(args);
+            break;
+        case 'edit':
+            parseEdit(args);
+            break;
+        case 'report':
+            parseReport(args);
+            break;
+        case 'todo':
+            parseTodo(args);
             break;
         default:
             console.error("[ERRO] - Comando inválido consulta os comandos válidos em  taskr --help ");
@@ -96,21 +105,36 @@ function parseAdd(args: string[]) {
 }
 
 /*
-taskr ls <flags>
--> -a (all)
+taskr ls [flags]
+-> sem flags: mostra tarefas de hoje (sem done)
+-> -a: mostra todas as tarefas (sem done)
+-> -d, --done: inclui tarefas done
+-> -a -d: mostra todas as tarefas incluindo done
 */
 
 function parseLs(args: string[]) {
-    if (args.length < 1) {
-        console.error("[ERRO] - Comando inválido usa exemplo: taskr ls");
+    let includeDone = false;
+    let showAll = false;
+    
+    // Processa flags
+    for (let i = 1; i < args.length; i++) {
+        const flag = args[i];
+        if (flag === '-a' || flag === '--all') {
+            showAll = true;
+        } else if (flag === '-d' || flag === '--done') {
+            includeDone = true;
+        } else {
+            console.error(`[ERRO] Flag desconhecida: ${flag}.`);
+            console.error(`       Flags disponíveis: -a (all), -d (done)`);
+            return;
+        }
     }
-    if (args.length == 1 ) {
-        taskScheduleToday();
-    }else if(args.length == 2 && isFlag(args[1]) && validToken(args[1])){
-        listAllTasks();
+    
+    if (showAll) {
+        listAllTasks(includeDone);
+    } else {
+        taskScheduleToday(includeDone);
     }
-
-  
 }
 
 /*
@@ -132,21 +156,23 @@ function parseDelete(args: string[]) {
 }
 
 /*
-taskr start <id | nome> se for nome cria uma tarefa e começa o shechedule logo 
+taskr start <descrição> - cria tarefa automaticamente se não existir e começa logo
 */
-
 function parseStart(args: string[]){
-    if (args.length < 1) {
-        console.error("[ERRO] - Comando inválido usa exemplo: taskr start <id | nome>");
+    if (args.length < 2) {
+        console.error("[ERRO] - Uso: taskr start <descrição>");
+        console.error("  Exemplo: taskr start Desenvolver nova funcionalidade");
         return; 
     }
-    if (args.length >= 2 && validToken(args[1])) { 
-        if (!isFlag(args[1])) {
-            const idOrName = args[1];
-            startTask(idOrName); 
-        } else {
-            console.error("[ERRO] - flag passada é inválida neste comando");
-        }
+    
+    // Junta todos os argumentos depois de "start" para formar a descrição
+    const description = args.slice(1).join(' ');
+    
+    if (validToken(description)) {
+        // Tenta encontrar por nome/ID primeiro, se não encontrar cria automaticamente
+        startTask(description, true); 
+    } else {
+        console.error("[ERRO] - Descrição inválida");
     }
 }
 
@@ -170,20 +196,41 @@ function parseHelp(args: string[]) {
     console.log(`      -s               Adicionar agendamento específico.`);
     
     // Comando LS
-    console.log(`  ls [flags]           Lista as tarefas (padrão: hoje).`);
-    console.log(`      -a               Lista todas as tarefas existentes (histórico).`);
+    console.log(`  ls [flags]           Lista as tarefas (padrão: hoje, sem tarefas done).`);
+    console.log(`      -a               Lista todas as tarefas existentes.`);
+    console.log(`      -d, --done       Inclui tarefas marcadas como done.`);
+    console.log(`      -a -d            Lista todas as tarefas incluindo done.`);
     
     // Comando DEL
     console.log(`  del <id>             Remove uma tarefa permanentemente pelo ID.`);
     
     // Comando START
-    console.log(`  start <id | nome>    Inicia o temporizador de uma tarefa.`);
-    console.log(`                       (Se passar um nome, cria a tarefa e inicia logo).`);
+    console.log(`  start <descrição>    Cria uma tarefa (se não existir) e inicia o temporizador.`);
+    console.log(`                       Exemplo: taskr start Desenvolver nova funcionalidade`);
     
     // Comando STOP
     console.log(`  stop                 Para o temporizador da tarefa atual.`);
+    
+    // Comando STATUS
     console.log(`  status [-t]          Mostra a tarefa atual ou o tempo total de hoje.`);
-    console.log(`  done <id>            Marca uma tarefa como concluída.`);
+    
+    // Comando DONE
+    console.log(`  done <id | nome>     Marca uma tarefa como concluída.`);
+    
+    // Comando TODO
+    console.log(`  todo <id | nome>     Marca uma tarefa como todo (reabre tarefa concluída).`);
+    
+    // Comando EDIT
+    console.log(`  edit <id | nome>     Edita uma tarefa.`);
+    console.log(`      -n <nome>        Edita o nome da tarefa.`);
+    console.log(`      -s <data>        Edita o schedule (formato: DD/MM/AAAA).`);
+    console.log(`      -s ""            Remove o schedule.`);
+    
+    // Comando REPORT
+    console.log(`  report [day|week|month]  Mostra relatório detalhado de atividades.`);
+    console.log(`      day (padrão)     Mostra relatório do dia atual.`);
+    console.log(`      week             Mostra relatório da semana atual.`);
+    console.log(`      month            Mostra relatório do mês atual.`);
     
     // Comando HELP
     console.log(`  --help               Mostra esta lista de comandos.\n`);
@@ -224,8 +271,122 @@ function parseStatus(args: string[]) {
 
 function parseDone(args: string[]) {
     if (args.length < 2) {
-        console.error("[ERRO] Uso: taskr done <id>");
+        console.error("[ERRO] Uso: taskr done <id | nome>");
         return;
     }
     markTaskAsDone(args[1]);
+}
+
+/*
+taskr todo <id | nome> - marca tarefa como todo (reabre tarefa concluída)
+*/
+function parseTodo(args: string[]) {
+    if (args.length < 2) {
+        console.error("[ERRO] Uso: taskr todo <id | nome>");
+        return;
+    }
+    markTaskAsTodo(args[1]);
+}
+
+/*
+taskr edit <id | nome> [flags]
+    -n <novo_nome> para editar o nome
+    -s <data> para editar o schedule (ou -s "" para remover)
+*/
+function parseEdit(args: string[]) {
+    if (args.length < 2) {
+        console.error("[ERRO] Uso: taskr edit <id | nome> [flags]");
+        console.error("  Flags:");
+        console.error("    -n <nome>     Edita o nome da tarefa");
+        console.error("    -s <data>     Edita o schedule (formato: DD/MM/AAAA)");
+        console.error("    -s \"\"          Remove o schedule");
+        return;
+    }
+    
+    const idOrName = args[1];
+    let newName: string | undefined = undefined;
+    let newSchedule: string | null | undefined = undefined;
+    
+    // Processa flags
+    for (let i = 2; i < args.length; i++) {
+        const flag = args[i];
+        
+        if (flag === '-n') {
+            if (i + 1 < args.length) {
+                // Junta todos os argumentos seguintes para o nome
+                const nameParts = [];
+                i++;
+                while (i < args.length && !isFlag(args[i])) {
+                    nameParts.push(args[i]);
+                    i++;
+                }
+                i--; // Volta um passo
+                newName = nameParts.join(' ');
+            } else {
+                console.error("[ERRO] A flag -n precisa de um nome.");
+                return;
+            }
+        } else if (flag === '-s') {
+            if (i + 1 < args.length) {
+                i++;
+                const scheduleInput = args[i];
+                if (scheduleInput === '""' || scheduleInput === "''" || scheduleInput === '') {
+                    newSchedule = null; // Remove schedule
+                } else {
+                    const isoDate = convertToISO(scheduleInput);
+                    if (isoDate) {
+                        newSchedule = isoDate;
+                    } else {
+                        console.error(`[ERRO] Data inválida: "${scheduleInput}". Usa o formato DD/MM/AAAA.`);
+                        return;
+                    }
+                }
+            } else {
+                console.error("[ERRO] A flag -s precisa de uma data.");
+                return;
+            }
+        }
+    }
+    
+    if (newName === undefined && newSchedule === undefined) {
+        console.error("[ERRO] É preciso especificar pelo menos uma flag (-n ou -s).");
+        return;
+    }
+    
+    editTask(idOrName, newName, newSchedule);
+}
+
+/*
+taskr report [day | week | month]
+*/
+function parseReport(args: string[]) {
+    if (args.length === 1) {
+        // Por padrão mostra o dia
+        showDayReport();
+        return;
+    }
+    
+    const period = args[1].toLowerCase();
+    
+    switch (period) {
+        case 'day':
+        case 'd':
+            if (args.length > 2) {
+                // Permite especificar uma data específica
+                showDayReport(args[2]);
+            } else {
+                showDayReport();
+            }
+            break;
+        case 'week':
+        case 'w':
+            showWeekReport();
+            break;
+        case 'month':
+        case 'm':
+            showMonthReport();
+            break;
+        default:
+            console.error("[ERRO] Período inválido. Use: day, week ou month");
+    }
 }

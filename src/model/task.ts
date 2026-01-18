@@ -41,7 +41,7 @@ function getNextId(tasks: task[]): string {
     return (maxId + 1).toString();
 }
 
-export function taskScheduleToday(): void {
+export function taskScheduleToday(includeDone: boolean = false): void {
     const tasks = loadTasks();
     
     if (!tasks || tasks.length === 0) {
@@ -52,10 +52,15 @@ export function taskScheduleToday(): void {
     // Obtém a data de hoje no formato YYYY-MM-DD (parte inicial do ISO)
     const today = new Date().toISOString().split('T')[0];
 
-    const tasksToday = tasks.filter(t => {
+    let tasksToday = tasks.filter(t => {
         // Verifica se tem schedule e se a string começa com a data de hoje
         return t.schedule && t.schedule.startsWith(today);
     });
+
+    // Filtra tarefas done se não incluir
+    if (!includeDone) {
+        tasksToday = tasksToday.filter(t => t.status !== 'done');
+    }
 
     if (tasksToday.length === 0) {
         console.log(`[INFO] Não há tarefas agendadas para hoje (${today}).`);
@@ -65,7 +70,7 @@ export function taskScheduleToday(): void {
     }
 }
 
-export function listAllTasks(): void {
+export function listAllTasks(includeDone: boolean = false): void {
     const tasks = loadTasks();
 
     if (!tasks || tasks.length === 0) {
@@ -73,8 +78,17 @@ export function listAllTasks(): void {
         return;
     }
 
-    console.log(`\n=== 🗂️  Todas as Tarefas ===`);
-    tasks.forEach(t => printTask(t));
+    // Filtra tarefas done se não incluir
+    const filteredTasks = includeDone ? tasks : tasks.filter(t => t.status !== 'done');
+
+    if (filteredTasks.length === 0) {
+        console.log(`[INFO] A lista de tarefas está vazia.`);
+        return;
+    }
+
+    const title = includeDone ? '🗂️  Todas as Tarefas' : '🗂️  Tarefas Ativas';
+    console.log(`\n=== ${title} ===`);
+    filteredTasks.forEach(t => printTask(t));
 }
 
 function printTask(t: task): void {
@@ -94,19 +108,64 @@ export function getTaskById(id: string): task | null {
     return found || null;
 }
 
+// --- Função Auxiliar: Find Task By ID or Name ---
+function findTaskByIdOrName(idOrName: string, tasks?: task[]): { task: task; index: number } | null {
+    // Se não receber tasks, carrega (para compatibilidade com outras funções)
+    const tasksArray = tasks || loadTasks();
+    
+    // Primeiro tenta encontrar por ID
+    let taskIndex = tasksArray.findIndex(t => t.id === idOrName);
+    
+    if (taskIndex !== -1) {
+        return { task: tasksArray[taskIndex], index: taskIndex };
+    }
+    
+    // Se não encontrar, busca por nome (case-insensitive, busca parcial)
+    taskIndex = tasksArray.findIndex(t => 
+        t.name.toLowerCase().includes(idOrName.toLowerCase()) || 
+        idOrName.toLowerCase().includes(t.name.toLowerCase())
+    );
+    
+    if (taskIndex !== -1) {
+        return { task: tasksArray[taskIndex], index: taskIndex };
+    }
+    
+    return null;
+}
+
 // --- Função Principal: Start Task ---
-export function startTask(idOrName: string): void {
+export function startTask(idOrName: string, createIfNotFound: boolean = false): void {
     const tasks = loadTasks();
     
-    // Tenta encontrar pelo ID
-    let taskIndex = tasks.findIndex(t => t.id === idOrName);
+    // Tenta encontrar pelo ID ou nome (passa o array para evitar recarregar)
+    const found = findTaskByIdOrName(idOrName, tasks);
     
-    // Se não encontrar por ID, podes implementar busca por nome aqui (opcional por agora)
-    if (taskIndex === -1) {
-        console.error(`[ERRO] Tarefa com id "${idOrName}" não encontrada.`);
+    let taskIndex: number;
+    
+    if (found) {
+        taskIndex = found.index;
+    } else if (createIfNotFound) {
+        // Se não encontrou e pode criar, cria uma nova tarefa
+        const newId = getNextId(tasks);
+        const newTask: task = {
+            id: newId,
+            name: idOrName,
+            status: "todo",
+            created_at: new Date().toISOString(),
+            end_at: null,
+            schedule: null,
+            work_flow: [],
+            task_notes: []
+        };
+        tasks.push(newTask);
+        taskIndex = tasks.length - 1;
+        console.log(`[INFO] Tarefa criada automaticamente: "${idOrName}"`);
+    } else {
+        console.error(`[ERRO] Tarefa "${idOrName}" não encontrada.`);
         return;
     }
 
+    // Usa a tarefa diretamente do array para garantir que as mudanças são refletidas
     const currentTask = tasks[taskIndex];
 
     // 1. Atualizar Status (se for 'todo' -> 'in_progress')
@@ -138,7 +197,6 @@ export function startTask(idOrName: string): void {
     currentTask.work_flow.push(newWork);
 
     // 5. Guardar alterações
-    // Como modificámos o objeto dentro do array 'tasks', basta guardar o array 'tasks'
     saveTasks(tasks);
 
     console.log(`[SUCESSO] Tarefa iniciada: "${currentTask.name}"`);
@@ -256,26 +314,312 @@ export function showTodayTotalTime(): void {
 /**
  * Marca uma tarefa como concluída
  */
-export function markTaskAsDone(id: string): void {
+export function markTaskAsDone(idOrName: string): void {
     const tasks = loadTasks();
-    const taskIndex = tasks.findIndex(t => t.id === id);
-
-    if (taskIndex === -1) {
-        console.error(`[ERRO] Tarefa com id "${id}" não encontrada.`);
+    const found = findTaskByIdOrName(idOrName, tasks);
+    
+    if (!found) {
+        console.error(`[ERRO] Tarefa "${idOrName}" não encontrada.`);
         return;
     }
+    
+    const taskIndex = found.index;
+    const task = tasks[taskIndex];
 
     // Se estiver a correr, paramos primeiro o tempo
-    const activeWork = tasks[taskIndex].work_flow?.find(w => w.stop === null);
+    const activeWork = task.work_flow?.find(w => w.stop === null);
     if (activeWork) {
         console.log(`[INFO] Parando temporizador ativo antes de concluir...`);
         stopTask(); // Esta função já grava no ficheiro, por isso recarregamos ou ajustamos
     }
 
     const tasksReloaded = loadTasks(); // Recarregar para garantir dados do stopTask
-    tasksReloaded[taskIndex].status = "done";
-    tasksReloaded[taskIndex].end_at = new Date().toISOString();
+    const reloadedFound = findTaskByIdOrName(idOrName, tasksReloaded);
+    
+    if (!reloadedFound) {
+        console.error(`[ERRO] Tarefa "${idOrName}" não encontrada após recarregar.`);
+        return;
+    }
+    
+    tasksReloaded[reloadedFound.index].status = "done";
+    tasksReloaded[reloadedFound.index].end_at = new Date().toISOString();
     
     saveTasks(tasksReloaded);
-    console.log(`[SUCESSO] Tarefa #${id} ("${tasksReloaded[taskIndex].name}") marcada como concluída! ✅`);
+    console.log(`[SUCESSO] Tarefa #${reloadedFound.task.id} ("${reloadedFound.task.name}") marcada como concluída! ✅`);
+}
+
+/**
+ * Marca uma tarefa como todo (reabre uma tarefa concluída)
+ */
+export function markTaskAsTodo(idOrName: string): void {
+    const tasks = loadTasks();
+    const found = findTaskByIdOrName(idOrName, tasks);
+    
+    if (!found) {
+        console.error(`[ERRO] Tarefa "${idOrName}" não encontrada.`);
+        return;
+    }
+    
+    const taskIndex = found.index;
+    const task = tasks[taskIndex];
+    
+    // Se estiver a correr, paramos primeiro o tempo
+    if (task.work_flow) {
+        const activeWork = task.work_flow.find(w => w.stop === null);
+        if (activeWork) {
+            console.log(`[INFO] Parando temporizador ativo antes de reabrir...`);
+            stopTask();
+            // Recarrega tasks após stop
+            const tasksReloaded = loadTasks();
+            const reloadedFound = findTaskByIdOrName(idOrName, tasksReloaded);
+            if (reloadedFound) {
+                tasksReloaded[reloadedFound.index].status = "todo";
+                tasksReloaded[reloadedFound.index].end_at = null;
+                saveTasks(tasksReloaded);
+                console.log(`[SUCESSO] Tarefa #${reloadedFound.task.id} ("${reloadedFound.task.name}") reaberta! 🔄`);
+            }
+            return;
+        }
+    }
+    
+    task.status = "todo";
+    task.end_at = null;
+    
+    saveTasks(tasks);
+    console.log(`[SUCESSO] Tarefa #${task.id} ("${task.name}") reaberta! 🔄`);
+}
+
+/**
+ * Edita uma tarefa: nome e/ou schedule
+ */
+export function editTask(idOrName: string, newName?: string, newSchedule?: string | null): void {
+    const tasks = loadTasks();
+    const found = findTaskByIdOrName(idOrName, tasks);
+    
+    if (!found) {
+        console.error(`[ERRO] Tarefa "${idOrName}" não encontrada.`);
+        return;
+    }
+    
+    const taskIndex = found.index;
+    const task = tasks[taskIndex];
+    
+    if (newName !== undefined) {
+        task.name = newName;
+    }
+    
+    if (newSchedule !== undefined) {
+        task.schedule = newSchedule;
+    }
+    
+    saveTasks(tasks);
+    
+    const scheduleInfo = task.schedule ? ` [Agendado: ${task.schedule}]` : '';
+    console.log(`[SUCESSO] Tarefa editada: "${task.name}"${scheduleInfo}`);
+}
+
+/**
+ * Formata minutos para string legível (ex: "2h 30m" ou "45m")
+ */
+function formatDuration(minutes: number): string {
+    if (minutes < 60) {
+        return `${minutes}m`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+/**
+ * Formata data ISO para formato legível (ex: "14:30")
+ */
+function formatTime(isoString: string): string {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * Formata data ISO para formato legível (ex: "05/01/2026 14:30")
+ */
+function formatDateTime(isoString: string): string {
+    const date = new Date(isoString);
+    return date.toLocaleString('pt-PT', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric',
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+}
+
+/**
+ * Mostra visualização detalhada do dia atual
+ */
+export function showDayReport(date?: string): void {
+    const tasks = loadTasks();
+    const targetDate = date ? date : new Date().toISOString().split('T')[0];
+    
+    const dayTasks: Array<{ task: task; work: work }> = [];
+    let totalMinutes = 0;
+    
+    tasks.forEach(task => {
+        if (task.work_flow) {
+            task.work_flow.forEach(work => {
+                if (work.start.startsWith(targetDate) && work.stop && work.duration) {
+                    dayTasks.push({ task, work });
+                    totalMinutes += work.duration;
+                }
+            });
+        }
+    });
+    
+    // Ordena por hora de início
+    dayTasks.sort((a, b) => a.work.start.localeCompare(b.work.start));
+    
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`📅 RELATÓRIO DO DIA: ${targetDate}`);
+    console.log(`${'='.repeat(70)}`);
+    
+    if (dayTasks.length === 0) {
+        console.log(`\n  Nenhuma atividade registada neste dia.\n`);
+        return;
+    }
+    
+    dayTasks.forEach(({ task, work }, index) => {
+        const startTime = formatTime(work.start);
+        const endTime = formatTime(work.stop!);
+        const duration = formatDuration(work.duration!);
+        
+        console.log(`\n  ${index + 1}. [${duration.padStart(6)}] ${task.name}`);
+        console.log(`     📍 ${startTime} → ${endTime}  |  Total: ${duration}`);
+    });
+    
+    console.log(`\n${'─'.repeat(70)}`);
+    console.log(`  ⏱️  TEMPO TOTAL: ${formatDuration(totalMinutes)} (${(totalMinutes / 60).toFixed(2)} horas)\n`);
+}
+
+/**
+ * Mostra visualização da semana atual
+ */
+export function showWeekReport(): void {
+    const tasks = loadTasks();
+    const now = new Date();
+    const currentWeekStart = new Date(now);
+    currentWeekStart.setDate(now.getDate() - now.getDay()); // Domingo
+    currentWeekStart.setHours(0, 0, 0, 0);
+    
+    const weekDays: { [key: string]: Array<{ task: task; work: work }> } = {};
+    const weekTotals: { [key: string]: number } = {};
+    
+    // Inicializa os dias da semana
+    for (let i = 0; i < 7; i++) {
+        const date = new Date(currentWeekStart);
+        date.setDate(currentWeekStart.getDate() + i);
+        const dateStr = date.toISOString().split('T')[0];
+        weekDays[dateStr] = [];
+        weekTotals[dateStr] = 0;
+    }
+    
+    // Coleta atividades da semana
+    tasks.forEach(task => {
+        if (task.work_flow) {
+            task.work_flow.forEach(work => {
+                if (work.stop && work.duration) {
+                    const workDate = work.start.split('T')[0];
+                    if (weekDays[workDate]) {
+                        weekDays[workDate].push({ task, work });
+                        weekTotals[workDate] += work.duration;
+                    }
+                }
+            });
+        }
+    });
+    
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`📆 RELATÓRIO DA SEMANA`);
+    console.log(`${'='.repeat(70)}\n`);
+    
+    const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    let weekTotal = 0;
+    
+    Object.keys(weekDays).sort().forEach((dateStr, index) => {
+        const dayName = dayNames[index];
+        const date = new Date(dateStr);
+        const formattedDate = date.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' });
+        const dayTotal = weekTotals[dateStr];
+        weekTotal += dayTotal;
+        
+        const activities = weekDays[dateStr];
+        
+        console.log(`  ${dayName} ${formattedDate}  ${'─'.repeat(50)}  ${formatDuration(dayTotal).padStart(8)}`);
+        
+        if (activities.length === 0) {
+            console.log(`     (nenhuma atividade)`);
+        } else {
+            activities.forEach(({ task, work }) => {
+                const startTime = formatTime(work.start);
+                const endTime = formatTime(work.stop!);
+                const duration = formatDuration(work.duration!);
+                console.log(`     • ${task.name.padEnd(35)} ${startTime}→${endTime}  ${duration}`);
+            });
+        }
+        console.log('');
+    });
+    
+    console.log(`${'─'.repeat(70)}`);
+    console.log(`  ⏱️  TOTAL DA SEMANA: ${formatDuration(weekTotal)} (${(weekTotal / 60).toFixed(2)} horas)\n`);
+}
+
+/**
+ * Mostra visualização do mês atual
+ */
+export function showMonthReport(): void {
+    const tasks = loadTasks();
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    
+    const monthTasks: Array<{ task: task; work: work }> = [];
+    let totalMinutes = 0;
+    
+    tasks.forEach(task => {
+        if (task.work_flow) {
+            task.work_flow.forEach(work => {
+                if (work.stop && work.duration) {
+                    const workDate = new Date(work.start);
+                    if (workDate.getFullYear() === currentYear && workDate.getMonth() === currentMonth) {
+                        monthTasks.push({ task, work });
+                        totalMinutes += work.duration;
+                    }
+                }
+            });
+        }
+    });
+    
+    // Agrupa por tarefa
+    const taskStats: { [taskName: string]: { count: number; totalMinutes: number } } = {};
+    
+    monthTasks.forEach(({ task, work }) => {
+        if (!taskStats[task.name]) {
+            taskStats[task.name] = { count: 0, totalMinutes: 0 };
+        }
+        taskStats[task.name].count++;
+        taskStats[task.name].totalMinutes += work.duration!;
+    });
+    
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`📊 RELATÓRIO DO MÊS: ${now.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' }).toUpperCase()}`);
+    console.log(`${'='.repeat(70)}\n`);
+    
+    // Ordena por tempo total
+    const sortedTasks = Object.entries(taskStats).sort((a, b) => b[1].totalMinutes - a[1].totalMinutes);
+    
+    sortedTasks.forEach(([taskName, stats], index) => {
+        const percentage = ((stats.totalMinutes / totalMinutes) * 100).toFixed(1);
+        console.log(`  ${(index + 1).toString().padStart(2)}. ${taskName.padEnd(40)} ${formatDuration(stats.totalMinutes).padStart(8)}  (${stats.count} sessões, ${percentage}%)`);
+    });
+    
+    console.log(`\n${'─'.repeat(70)}`);
+    console.log(`  ⏱️  TOTAL DO MÊS: ${formatDuration(totalMinutes)} (${(totalMinutes / 60).toFixed(2)} horas)`);
+    console.log(`  📈 Média diária: ${formatDuration(Math.round(totalMinutes / now.getDate()))}\n`);
 }
